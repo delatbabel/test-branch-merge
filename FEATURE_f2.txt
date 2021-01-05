@@ -1,0 +1,5 @@
+git flow init
+git flow feature start f1
+git checkout develop
+git flow feature start f2
+
