@@ -108,7 +108,7 @@ In the case where feature `f1` has already been merged to develop before work is
 
 ## If you have not branched f2 yet
 
-If the features are not inter-dependent and you have not yet branched feature `f2` yet, then do not branch it from the head of the develop `branch`, but instead branch it from the the point where `f1` as branched from. You need to use a repository browser to find the SHA of the commit, as described here: https://stackoverflow.com/questions/2816715/branch-from-a-previous-commit-using-git
+If the features are not inter-dependent and you have not yet branched feature `f2` yet, then do not branch it from the head of the `develop` branch, but instead branch it from the the point where `f1` as branched from. You need to use a repository browser to find the SHA of the commit, as described here: https://stackoverflow.com/questions/2816715/branch-from-a-previous-commit-using-git
 
 Let's try this with 2 new feature branches, `f3` and `f4`:
 
@@ -160,7 +160,7 @@ git merge feature/f4
 git push
 ```
 
-Note that this has also merged feature `f1` into `main`! This is because we created the `f4` branch in `develop` after we merged the `f1` branch to develop. So the merge of f4 into main picked up all of the commits that had been made to develop prior to `f4` being created, which included `f1` (but not `f3`).  To resolve this we can use branch rebasing or use a release branch, which we will discuss next.
+Note that this has also merged feature `f1` into `main`! This is because we created the `f4` branch in `develop` after we merged the `f1` branch to `develop`. So the merge of f4 into main picked up all of the commits that had been made to develop prior to `f4` being created, which included `f1` (but not `f3`).  To resolve this we can use branch rebasing or use a release branch, which we will discuss next.
 
 ## What if you have already created f2 after f1 was merged, but don't want to merge the f1?
 
