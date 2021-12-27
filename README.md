@@ -162,7 +162,7 @@ git push
 
 Note that this has also merged feature `f1` into `main`! This is because we created the `f4` branch in `develop` after we merged the `f1` branch to `develop`. So the merge of f4 into main picked up all of the commits that had been made to develop prior to `f4` being created, which included `f1` (but not `f3`).  To resolve this we can use branch rebasing or use a release branch, which we will discuss next.
 
-## What if you have already created f2 after f1 was merged, but don't want to merge the f1?
+## What if you have already created f2 after f1 was merged, but don't want to merge f1?
 
 If the feature `f2` has already been branched after feature `f1` has been merged (e.g. to `develop`), but you need to merge it to `main` without bringing across the commits from feature `f1`, then you need to rebase feature `f2` back to the point where `f1` was branched from. Once again you need to use a repository browser (or `git log`) to find the SHA of the commit at the root of the feature `f1` branch as described above. There are a few different strategies for doing this, such as using the `--onto` parameter of `git rebase`, or using a temporary branch at the point where you want to rebase to and then rebase to the temporary branch. They are described in this posting: https://stackoverflow.com/questions/7744049/git-how-to-rebase-to-a-specific-commit
 
@@ -281,3 +281,245 @@ git merge release
 ```
 
 At this point you can remove your `release` branch and recreate it later for your next release, or you can choose to leave it in place as a permanent record (give each release branch a different name in that case).
+
+# Reverting Merges
+
+What if I have created branches f1 and f2, merged both, but I want to undo the merge of f1?
+
+As a bit of ASCII art, your develop tree may now look like this:
+
+```
+ ---o1--o2--o3--M1--x1--x2--x3--x4--x5----M2
+     \         /             \           /
+      \---A---B   feature/f1  \         /
+                               \---X---Y  feature/f2
+```
+
+The problem here is now how to revert feature/f1 but leave the changes for feature/f2 in place.
+
+Firstly, you should start by reading this mail posting by Linus Torvalds: https://mirrors.edge.kernel.org/pub/software/scm/git/docs/howto/revert-a-faulty-merge.txt and also this stackoverflow post: https://stackoverflow.com/questions/12534312/revert-a-merge-after-being-pushed
+
+There are two `git` commands that we will discuss here, which are `git reset` and `git revert`. It may help to read their instruction and tutorial pages here:
+
+* https://git-scm.com/docs/git-reset and https://www.atlassian.com/git/tutorials/undoing-changes/git-reset
+* https://git-scm.com/docs/git-revert and https://www.atlassian.com/git/tutorials/undoing-changes/git-revert
+
+The difference between these two commands is:
+
+* `git reset` resets the commits on a git branch by removing all of the commits after that point.
+* `git revert` inserts a new commit into the commit tree that undoes all of the changes in one particular commit.
+
+Looking again at the above commit tree, there are changes marked x1, x2, x3, etc on the tree which have nothing to do with either feature/f1 nor feature/f2. So we don't want to undo those changes.  We want to undo the changes in feature/f1 which have been merged with commit M1, but leave the changes in feature/f2 which have been merged with commit M2.  There are two simple ways that we can go about this:
+
+## Method 1 -- Undo the latest merge, then rebase
+
+* use `git reset --hard x5` which will undo the merge of the feature/f2 branch to the `develop` branch.  This just sets the HEAD of the `develop` branch to commit x5 (note that you have to use the SHA hash of commit x5 here, not just say "x5"), which has the effect of undoing your merge of feature/f2.  Note that we can only do this if there are no commits after M2, because those commits will all be lost.
+* rebase the feature branch f2 to the BASE of feature/f1 by doing:
+
+```
+git checkout feature/f2
+git rebase --onto x3 o1
+```
+
+This is the same process that I described in the section titled **What if you have already created f2 after f1 was merged, but don't want to merge f1?** above.
+
+Although we have not reverted `feature/f1` from the `develop` branch, we are now free to merge `feature/f2` to the `release` branch as we were discussing above, and this will not merge any of the changes on branch `feature/f1`. This is ideal if you want to continue developing on your `develop` branch, e.g. to fix any problems introduced by feature f1 before merging that to the `release` and then `main` branches.
+
+Finally we need to force push the changes using:
+
+```
+git push --force
+```
+
+## Method 2 -- using git revert
+
+`git revert` is different to using `git reset` in that it doesn't undo any changes. Instead it inserts a new commit into the source tree that has the effect of undoing all of the changes in a previous commit. It's probably best I explain this by paraphrasing from Linus' post (adjusting branch and commit names). Let's start with our original position again:
+
+```
+ ---o1--o2--o3--M1--x1--x2--x3--x4--x5----M2
+     \         /             \           /
+      \---A---B   feature/f1  \         /
+                               \---X---Y  feature/f2
+```
+
+We now do `git revert M1` which pushes a new change to the end of the `develop` branch which contains the opposite of the change in M1, which is the commit that we created when we merged `feature/f1`:
+
+```
+ ---o1--o2--o3--M1--x1--x2--x3--x4--x5----M2---W1
+     \         /             \           /
+      \---A---B   feature/f1  \         /
+                               \---X---Y  feature/f2
+```
+
+I'll continue Linus' convention of using "W" to be the opposite of "M" because it's an upside-down "M".
+
+Now continuing with Linus' post, looking at just feature/f1:
+
+---
+
+The history immediately after the "revert of the merge" would look like this:
+
+```
+ ---o---o---o---M---x---x---W
+               /
+       ---A---B
+```
+
+where A and B are on the side development that was not so good, M is the
+merge that brings these premature changes into the mainline, x are changes
+unrelated to what the side branch did and already made on the mainline,
+and W is the "revert of the merge M" (doesn't W look M upside down?).
+IOW, `"diff W^..W"` is similar to `"diff -R M^..M"`.
+
+Such a "revert" of a merge can be made with:
+
+    $ git revert -m 1 M
+
+After the developers of the side branch fix their mistakes, the history
+may look like this:
+
+```
+ ---o---o---o---M---x---x---W---x
+               /
+       ---A---B-------------------C---D
+```
+
+where C and D are to fix what was broken in A and B, and you may already
+have some other changes on the mainline after W.
+
+If you merge the updated side branch (with D at its tip), none of the
+changes made in A or B will be in the result, because they were reverted
+by W.  That is what Alan saw.
+
+Linus explains the situation:
+
+    Reverting a regular commit just effectively undoes what that commit
+    did, and is fairly straightforward. But reverting a merge commit also
+    undoes the _data_ that the commit changed, but it does absolutely
+    nothing to the effects on _history_ that the merge had.
+
+    So the merge will still exist, and it will still be seen as joining
+    the two branches together, and future merges will see that merge as
+    the last shared state - and the revert that reverted the merge brought
+    in will not affect that at all.
+
+    So a "revert" undoes the data changes, but it's very much _not_ an
+    "undo" in the sense that it doesn't undo the effects of a commit on
+    the repository history.
+
+    So if you think of "revert" as "undo", then you're going to always
+    miss this part of reverts. Yes, it undoes the data, but no, it doesn't
+    undo history.
+
+In such a situation, you would want to first revert the previous revert,
+which would make the history look like this:
+
+```
+ ---o---o---o---M---x---x---W---x---Y
+               /
+       ---A---B-------------------C---D
+```
+
+where Y is the revert of W.  Such a "revert of the revert" can be done
+with:
+
+    $ git revert W
+
+This history would (ignoring possible conflicts between what W and W..Y
+changed) be equivalent to not having W or Y at all in the history:
+
+```
+ ---o---o---o---M---x---x-------x----
+               /
+       ---A---B-------------------C---D
+```
+
+and merging the side branch again will not have conflict arising from an
+earlier revert and revert of the revert.
+
+```
+ ---o---o---o---M---x---x-------x-------*
+               /                       /
+       ---A---B-------------------C---D
+```
+
+Of course the changes made in C and D still can conflict with what was
+done by any of the x, but that is just a normal merge conflict.
+
+On the other hand, if the developers of the side branch discarded their
+faulty A and B, and redone the changes on top of the updated mainline
+after the revert, the history would have looked like this:
+
+```
+ ---o---o---o---M---x---x---W---x---x
+               /                 \
+       ---A---B                   A'--B'--C'
+```
+
+If you reverted the revert in such a case as in the previous example:
+
+```
+ ---o---o---o---M---x---x---W---x---x---Y---*
+               /                 \         /
+       ---A---B                   A'--B'--C'
+```
+
+where Y is the revert of W, A' and B' are rerolled A and B, and there may
+also be a further fix-up C' on the side branch.  `"diff Y^..Y"` is similar
+to `"diff -R W^..W"` (which in turn means it is similar to `"diff M^..M"`),
+and `"diff A'^..C'"` by definition would be similar but different from that,
+because it is a rerolled series of the earlier change.  There will be a
+lot of overlapping changes that result in conflicts.  So do not do "revert
+of revert" blindly without thinking..
+
+```
+ ---o---o---o---M---x---x---W---x---x
+               /                 \
+       ---A---B                   A'--B'--C'
+```
+
+In the history with rebased side branch, W (and M) are behind the merge
+base of the updated branch and the tip of the mainline, and they should
+merge without the past faulty merge and its revert getting in the way.
+
+To recap, these are two very different scenarios, and they want two very
+different resolution strategies:
+
+* If the faulty side branch was fixed by adding corrections on top, then doing a revert of the previous revert would be the right thing to do.
+
+* If the faulty side branch whose effects were discarded by an earlier revert of a merge was rebuilt from scratch (i.e. rebasing and fixing, as you seem to have interpreted), then re-merging the result without doing anything else fancy would be the right thing to do.
+
+However, there are things to keep in mind when reverting a merge (and
+reverting such a revert).
+
+For example, think about what reverting a merge (and then reverting the
+revert) does to bisectability. Ignore the fact that the revert of a revert
+is undoing it - just think of it as a "single commit that does a lot".
+Because that is what it does.
+
+When you have a problem you are chasing down, and you hit a "revert this
+merge", what you're hitting is essentially a single commit that contains
+all the changes (but obviously in reverse) of all the commits that got
+merged. So it's debugging hell, because now you don't have lots of small
+changes that you can try to pinpoint which _part_ of it changes.
+
+But does it all work? Sure it does. You can revert a merge, and from a
+purely technical angle, Git did it very naturally and had no real
+troubles. It just considered it a change from "state before merge" to
+"state after merge", and that was it. Nothing complicated, nothing odd,
+nothing really dangerous. Git will do it without even thinking about it.
+
+So from a technical angle, there's nothing wrong with reverting a merge,
+but from a workflow angle it's something that you generally should try to
+avoid.
+
+If at all possible, for example, if you find a problem that got merged
+into the main tree, rather than revert the merge, try _really_ hard to
+bisect the problem down into the branch you merged, and just fix it, or
+try to revert the individual commit that caused it.
+
+Yes, it's more complex, and no, it's not always going to work (sometimes
+the answer is: "oops, I really shouldn't have merged it, because it wasn't
+ready yet, and I really need to undo _all_ of the merge"). So then you
+really should revert the merge, but when you want to re-do the merge, you
+now need to do it by reverting the revert.
